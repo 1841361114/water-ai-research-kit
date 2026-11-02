@@ -1,28 +1,37 @@
 # Water AI Research Kit
 
-一个从 AI 检索研究探索中整理出来的轻量工具包，用于积累可复用代码，并为后续水利与 AI 实验准备可靠的数据划分、基线和复现记录。
+**面向水利与 AI 研究的 Python 实验工具箱：检查数据划分、运行基础检索、计算评价指标，并保存可核对的实验记录。**
 
-**当前版本 v0.1.0：Python 3.10+，运行时零第三方依赖，离线 CPU 可运行。**
-它包含已有算法的实现和研究工程工具；目前没有新方法论文主张，也没有经过真实水文数据验证的预测模型。
+例如，你准备使用测站数据开展流量预测：本项目可以帮助你把时间序列切成互不共享原始观测的训练、验证、测试窗口，比较预测值与实测值，并记录本次实验使用的文件版本。训练预测模型和准备真实数据由你自己的研究代码完成。
 
-[English overview](README_EN.md) · [代码来源与算法参考](docs/PROVENANCE.md) · [水利实验接入说明](docs/WATER_AI_GUIDE.md) · [MIT License](LICENSE)
+**v0.1.0 · Python 3.10+ · 运行时零第三方依赖 · 离线 CPU 可运行 · MIT 许可**
 
-## 能用来做什么
+[English overview](README_EN.md) · [逐项功能与输入输出](docs/FUNCTIONS_zh.md) · [水利实验接入说明](docs/WATER_AI_GUIDE.md) · [代码来源](docs/PROVENANCE.md)
 
-| 模块 | 已实现 | 对水利与 AI 的用途 |
+## 它具体能帮你解决哪些问题
+
+| 你遇到的问题 | 你提供什么 | 代码做什么、返回什么 |
 |---|---|---|
-| `retrieval.py` | BM25、RRF 融合、带逐步记录的 MMR | 建立文献/技术资料检索的简单基线 |
-| `metrics.py` | Recall、Hit、找全率、倒数排名；MAE、RMSE、NSE | 明确评价口径，比较检索或预测基线 |
-| `audit.py` | SHA-256、显式文件清单、文本重复检查、JSON 输出 | 追踪输入和结果，检查跨划分重复 |
-| `splits.py` | 来源连通分量、组隔离检查、先切分再构窗 | 检查流域/测站跨集合重叠、避免窗口共享原始观测 |
-| `sensitivity.py` | 整组切换标注视图的有限敏感性范围 | 查看固定人群上的结论是否依赖已有标注视图 |
-| `demo.py` | 合成时序、持续性基线、资料检索、文件校验 | 运行一个完整且不需要数据下载的入门流程 |
+| 训练集与测试集会不会混入相同来源？ | 各集合的测站/流域/来源 ID，或文本列表 | 检查跨集合重叠；发现组重叠时报错，文本检查返回重复内容的哈希及所在集合 |
+| 如何给时序模型准备训练和测试样本？ | 单个连续序列的长度、划分边界、历史长度、预测长度 | 返回各集合的输入/目标切片位置；边界窗口会舍弃，原始观测不跨集合共享 |
+| 预测结果到底误差多大？ | 等长、逐项对应的实测值与预测值 | 返回 MAE、RMSE 和 NSE，便于与简单基线比较 |
+| 哪些资料更符合当前查询？ | 已准备好的候选文本与查询词，或多个已有排名 | 用 BM25 排序、用 RRF 合并排名；MMR 可在给定候选池中兼顾相关性与去重复 |
+| 检索是否找到了应该找到的资料？ | 预测的资料 ID 排名、人工标注的正确 ID | 返回召回率、是否命中、是否全部找齐、倒数排名 |
+| 这次实验使用的文件后来变了吗？ | 明确指定的输入/输出文件列表 | 记录文件大小与 SHA-256；再次校验时发现变化会报错 |
+| 换一套已有标注后，方法比较会变吗？ | 固定评价人群内，各组、各标注视图的差值总和 | 返回整组切换标注时平均差值的最小/最大值 |
 
-文本重复检查只能发现特定规范化后的相同文本。它不能证明语义独立、上游数据独立或模型预训练无污染。MMR、融合或复杂模型均不保证优于简单基线。
+本项目适合正在搭建研究实验、需要透明小规模基线的学生和研究人员。已有 Python 数据处理或模型代码时，可以只导入需要的函数，不必采用整个示例流程。
 
-## 立即运行
+## 几分钟运行一个完整示例
 
-在解压后的项目根目录运行，无需安装包或联网：
+先克隆仓库，并确认本机已有 Python 3.10 或更新版本：
+
+```bash
+git clone https://github.com/1841361114/water-ai-research-kit.git
+cd water-ai-research-kit
+```
+
+在项目根目录执行以下命令，无需下载真实数据、模型权重或安装第三方运行库：
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -30,7 +39,18 @@ python3 -m water_ai_research demo --output outputs/first-run
 python3 -m water_ai_research verify outputs/first-run
 ```
 
-示例写出 `series.json`、`protocol.json`、`report.json`、`manifest.json`。重复运行请换输出目录；已有结果不会被覆盖。数值序列和检索资料均为人为构造，不能用示例分数证明真实预测效果。
+示例会生成 240 个**人为构造的时序观测**，先划分时间区间，再创建样本，用“下一步预测值等于最后一个已知观测”的持续性方法计算误差；另外用 4 条人为编写的水利主题资料演示检索。训练、验证、测试分别得到 132、34、34 个一步预测样本。
+
+结果保存在 `outputs/first-run/`：
+
+| 文件 | 保存的内容 | 你可以用它检查什么 |
+|---|---|---|
+| `series.json` | 合成序列、合成标记及任意单位说明 | 示例实际使用了什么观测 |
+| `protocol.json` | 划分参数、每个窗口的位置、基线定义 | 哪些数据用于训练/验证/测试，预测时使用哪些历史 |
+| `report.json` | 分集合的预测误差、检索排名及检索指标 | 基线如何表现，结果是否按预定口径评价 |
+| `manifest.json` | 上述三个文件的大小和内容哈希 | 文件生成后是否发生变化 |
+
+校验成功时终端显示 `Manifest verified.`。重复运行请换输出目录，已有结果不会被覆盖。这些合成结果只验证流程可以运行，不能代表真实流量预测效果。
 
 也可在自己的虚拟环境中安装：
 
@@ -41,26 +61,60 @@ water-ai demo --output outputs/installed-run
 
 安装时可能需要取得构建工具；直接用模块运行不需要第三方包。该项目未发布到 PyPI。
 
-## 在自己的代码中使用
+## 将其中一个功能接入自己的代码
+
+**例 1：给已有预测结果计算误差。** 本函数不训练模型；把你的实测值与模型输出逐项对齐后传入即可。
 
 ```python
-from water_ai_research.retrieval import BM25, rank_scores
-from water_ai_research.metrics import retrieval_metrics
-from water_ai_research.splits import temporal_windows
+from water_ai_research.metrics import regression_metrics
 
-documents = ["rainfall runoff forecasting", "turbine vibration monitoring"]
-order = rank_scores(BM25(documents).score("runoff"))
-ids = ["note-1", "note-2"]
-print(retrieval_metrics([ids[i] for i in order], {"note-1"}, k=1))
-
-# 单个测站、已检查时间顺序且连续等间隔的 1000 个观测。
-windows = temporal_windows(
-    n=1000, lookback=24, horizon=1,
-    train_end=600, validation_end=800, gap=24,
-)
+observed = [1.0, 2.0, 3.0]
+predicted = [2.0, 2.0, 2.0]
+result = regression_metrics(observed, predicted)
+print(result["mae"])   # 0.6666666666666666，单位与输入相同
+print(result["nse"])   # 0.0；观测为常数时返回 None
 ```
 
-中文资料请向 `BM25(..., tokenizer=你的分词函数)` 传入分词器。默认仅使用正则词元，不提供中文分词。检索评分和数值计算采用清晰的小规模实现，未针对大型语料优化。
+**例 2：准备时序窗口。** 先固定集合边界，再取每个窗口的输入和目标；函数返回切片位置，不会读取测站文件或自动拟合预处理器。
+
+```python
+from water_ai_research.splits import temporal_windows
+
+# 用数字序列展示切片方式；真实研究中替换为已清洗的单测站观测。
+values = list(range(1000))
+windows = temporal_windows(
+    n=len(values), lookback=24, horizon=1,
+    train_end=600, validation_end=800, gap=24,
+)
+first_test = windows["test"][0]
+x = values[first_test.input_start:first_test.input_stop]
+y = values[first_test.target_start:first_test.target_stop]
+print(len(x), len(y))  # 24 1
+```
+
+这里长度和 `gap` 的单位均为**观测条数**。使用真实数据前，应检查时间顺序、采样间隔、缺测和单位，并按测站分别构窗。
+
+各检索函数、组检查、文件校验及敏感性计算的调用示例见 [逐项功能说明](docs/FUNCTIONS_zh.md)。
+
+## 从哪里开始读代码
+
+| 文件 | 职责 |
+|---|---|
+| `water_ai_research/retrieval.py` | BM25 文本评分、稳定排序、RRF 排名融合、MMR 选择及逐步记录 |
+| `water_ai_research/metrics.py` | 检索指标与回归误差指标 |
+| `water_ai_research/splits.py` | 共享身份的连通分组、组隔离检查、时序窗口划分 |
+| `water_ai_research/audit.py` | 文本重复检查、文件清单生成/校验、JSON 记录 |
+| `water_ai_research/sensitivity.py` | 固定评价人群下的有限标注视图敏感性计算 |
+| `water_ai_research/demo.py` | 串起上述部分工具的离线合成示例 |
+| `tests/` | 28 项单元及流程测试 |
+
+## 当前能力范围
+
+本仓库提供实验工具和已有算法基线。真实水利数据导入、缺测处理、神经网络训练、物理仿真及可视化界面需要后续另行接入；目前尚未完成真实水文数据验证。
+
+BM25 默认只做简单正则分词，中文资料需要传入自己的分词函数。MMR 接收你准备的相关性分数与相似度矩阵，不会自动调用语义模型；RRF 接收已有排名，不负责运行上游检索器。当前实现面向便于阅读的小规模实验，没有针对大型语料优化。
+
+分组检查只识别传入的身份，文本检查只识别指定规范化后的相同文本。它们不能自动证明语义独立、上游数据独立或模型预训练无污染。融合和去重复也不保证优于简单检索基线。
 
 ## 评价约定
 
